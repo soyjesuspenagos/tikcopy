@@ -22,6 +22,33 @@ function formatNumber(n) {
   return n.toString()
 }
 
+// ── Resolver URL corta ────────────────────────────────────────────────────────
+// vt.tiktok.com y vm.tiktok.com son redirects — los resolvemos
+// pasando la URL directamente a la API que maneja redirects internamente.
+// Si la API falla con URL corta, intentamos con un proxy de resolución.
+async function resolveUrl(url) {
+  // La API de RapidAPI tiktok-scraper7 acepta URLs cortas directamente
+  // pero como fallback usamos allorigins para resolver el redirect
+  const shortDomains = ['vt.tiktok.com', 'vm.tiktok.com', 'www.tiktok.com/t/']
+  const isShort = shortDomains.some(d => url.includes(d))
+
+  if (!isShort) return url
+
+  try {
+    // allorigins actúa como proxy y sigue los redirects
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`
+    const res = await fetch(proxyUrl)
+    const data = await res.json()
+    // La URL final viene en data.status.url
+    if (data?.status?.url && data.status.url.includes('tiktok.com')) {
+      return data.status.url
+    }
+  } catch (_) {
+    // Si el proxy falla, devolvemos la URL original y dejamos que la API lo intente
+  }
+  return url
+}
+
 // ── Sub-componentes ───────────────────────────────────────────────────────────
 function CopyBlock({ label, content, mono = false }) {
   const [copied, setCopied] = useState(false)
@@ -67,8 +94,10 @@ export default function App() {
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
   const [copiedAll, setCopiedAll] = useState(false)
+  const [loadingMsg, setLoadingMsg] = useState('Extrayendo...')
 
-  const isValidTikTok = (u) => u.includes('tiktok.com') || u.includes('vm.tiktok')
+  const isValidTikTok = (u) =>
+    u.includes('tiktok.com') || u.includes('vm.tiktok') || u.includes('vt.tiktok')
 
   const handleFetch = async () => {
     if (!url.trim()) return setError('Pega un enlace de TikTok.')
@@ -78,10 +107,16 @@ export default function App() {
     setError('')
     setResult(null)
     setLoading(true)
+    setLoadingMsg('Resolviendo enlace...')
 
     try {
+      // Paso 1: resolver URL corta si aplica
+      const resolvedUrl = await resolveUrl(url.trim())
+      setLoadingMsg('Extrayendo datos del video...')
+
+      // Paso 2: llamar a la API con la URL resuelta
       const res = await fetch(
-        `https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(url)}&hd=1`,
+        `https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(resolvedUrl)}&hd=1`,
         {
           headers: {
             'X-RapidAPI-Key': API_KEY,
@@ -92,32 +127,52 @@ export default function App() {
       const json = await res.json()
 
       if (json.code !== 0 || !json.data) {
+        // Si falla con URL resuelta, intentar con la URL original directamente
+        if (resolvedUrl !== url.trim()) {
+          setLoadingMsg('Reintentando con URL original...')
+          const res2 = await fetch(
+            `https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(url.trim())}&hd=1`,
+            {
+              headers: {
+                'X-RapidAPI-Key': API_KEY,
+                'X-RapidAPI-Host': 'tiktok-scraper7.p.rapidapi.com',
+              },
+            }
+          )
+          const json2 = await res2.json()
+          if (json2.code !== 0 || !json2.data) {
+            throw new Error('No se pudo obtener el video. Prueba con la URL completa del video.')
+          }
+          processResult(json2.data)
+          return
+        }
         throw new Error(json.msg || 'No se pudo obtener el video.')
       }
 
-      const d = json.data
-      const desc = d.title || ''
-
-      setResult({
-        description: desc,
-        descClean: cleanDescription(desc),
-        hashtags: extractHashtags(desc).join(' '),
-        mentions: extractMentions(desc).join(' '),
-        author: d.author?.nickname || '',
-        authorId: d.author?.unique_id ? `@${d.author.unique_id}` : '',
-        cover: d.cover,
-        plays: d.play_count,
-        likes: d.digg_count,
-        comments: d.comment_count,
-        shares: d.share_count,
-        music: d.music_info?.title ? `${d.music_info.title} · ${d.music_info.author}` : '',
-        fullText: desc,
-      })
+      processResult(json.data)
     } catch (e) {
       setError(e.message || 'Error al conectar con la API.')
     } finally {
       setLoading(false)
     }
+  }
+
+  const processResult = (d) => {
+    const desc = d.title || ''
+    setResult({
+      description: desc,
+      descClean: cleanDescription(desc),
+      hashtags: extractHashtags(desc).join(' '),
+      mentions: extractMentions(desc).join(' '),
+      author: d.author?.nickname || '',
+      authorId: d.author?.unique_id ? `@${d.author.unique_id}` : '',
+      cover: d.cover,
+      plays: d.play_count,
+      likes: d.digg_count,
+      comments: d.comment_count,
+      shares: d.share_count,
+      music: d.music_info?.title ? `${d.music_info.title} · ${d.music_info.author}` : '',
+    })
   }
 
   const handleCopyAll = async () => {
@@ -154,7 +209,7 @@ export default function App() {
           <input
             style={styles.input}
             type="url"
-            placeholder="https://www.tiktok.com/@usuario/video/..."
+            placeholder="https://vt.tiktok.com/... o enlace completo"
             value={url}
             onChange={(e) => { setUrl(e.target.value); setError('') }}
             onKeyDown={handleKeyDown}
@@ -168,12 +223,23 @@ export default function App() {
           </button>
         </div>
 
+        {/* Tip de URLs cortas */}
+        {!result && !loading && !error && (
+          <p style={styles.tip}>✓ Soporta enlaces cortos (vt.tiktok.com) y completos</p>
+        )}
+
         {error && <p style={styles.error}>⚠ {error}</p>}
+
+        {/* Loading state */}
+        {loading && (
+          <div style={styles.loadingState}>
+            <p style={styles.loadingMsg}>{loadingMsg}</p>
+          </div>
+        )}
 
         {/* Resultado */}
         {result && (
           <div style={styles.resultCard}>
-            {/* Meta del video */}
             <div style={styles.videoMeta}>
               {result.cover && (
                 <img src={result.cover} alt="cover" style={styles.cover} />
@@ -184,13 +250,12 @@ export default function App() {
                 <div style={styles.stats}>
                   <StatPill label="plays" value={result.plays} />
                   <StatPill label="likes" value={result.likes} />
-                  <StatPill label="comments" value={result.comments} />
+                  <StatPill label="coms" value={result.comments} />
                   <StatPill label="shares" value={result.shares} />
                 </div>
               </div>
             </div>
 
-            {/* Botón copiar todo */}
             <button
               style={{ ...styles.copyAllBtn, ...(copiedAll ? styles.copyAllBtnSuccess : {}) }}
               onClick={handleCopyAll}
@@ -198,7 +263,6 @@ export default function App() {
               {copiedAll ? '✓ Todo copiado al portapapeles' : '⎘ Copiar todo'}
             </button>
 
-            {/* Bloques */}
             <CopyBlock label="Descripción completa" content={result.description} />
             {result.descClean && result.descClean !== result.description && (
               <CopyBlock label="Solo el texto (sin hashtags ni menciones)" content={result.descClean} />
@@ -219,12 +283,13 @@ export default function App() {
         {!result && !loading && !error && (
           <div style={styles.emptyState}>
             <span style={styles.emptyIcon}>🎵</span>
-            <p style={styles.emptyText}>Pega el enlace de un TikTok y extrae su descripción, hashtags y menciones con un clic.</p>
+            <p style={styles.emptyText}>
+              Pega el enlace de un TikTok y extrae su descripción, hashtags y menciones con un clic.
+            </p>
           </div>
         )}
       </main>
 
-      {/* Footer */}
       <footer style={styles.footer}>
         Desarrollado por <span style={{ color: 'var(--blue)' }}>Penagos Lab</span> · Una unidad de Penagos Studio
       </footer>
@@ -269,32 +334,30 @@ const styles = {
     letterSpacing: '-0.03em',
     marginBottom: 8,
   },
-  logoMark: { color: 'var(--white)' },
-  logoAccent: { color: 'var(--yellow)' },
+  logoMark: { color: '#F0F0F0' },
+  logoAccent: { color: '#F5C518' },
   tagline: {
-    color: 'var(--muted)',
+    color: '#6B6B6B',
     fontSize: '0.9rem',
-    fontWeight: 400,
   },
   main: { flex: 1, paddingBottom: 32 },
   inputRow: {
     display: 'flex',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   input: {
     flex: 1,
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
+    background: '#141414',
+    border: '1px solid #2A2A2A',
     borderRadius: 12,
     padding: '14px 16px',
-    color: 'var(--white)',
+    color: '#F0F0F0',
     fontSize: '0.95rem',
     outline: 'none',
-    transition: 'border-color 0.2s',
   },
   fetchBtn: {
-    background: 'var(--blue)',
+    background: '#1B4FD8',
     border: 'none',
     borderRadius: 12,
     width: 52,
@@ -305,9 +368,14 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    transition: 'opacity 0.2s',
   },
   fetchBtnDisabled: { opacity: 0.6, cursor: 'not-allowed' },
+  tip: {
+    fontSize: '0.75rem',
+    color: '#3d6b3d',
+    marginBottom: 16,
+    paddingLeft: 4,
+  },
   error: {
     color: '#F87171',
     fontSize: '0.85rem',
@@ -317,9 +385,18 @@ const styles = {
     borderRadius: 8,
     border: '1px solid rgba(248,113,113,0.2)',
   },
+  loadingState: {
+    textAlign: 'center',
+    padding: '32px 0',
+  },
+  loadingMsg: {
+    color: '#6B6B6B',
+    fontSize: '0.88rem',
+    marginTop: 12,
+  },
   resultCard: {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
+    background: '#141414',
+    border: '1px solid #2A2A2A',
     borderRadius: 16,
     padding: 20,
     display: 'flex',
@@ -337,17 +414,17 @@ const styles = {
     objectFit: 'cover',
     borderRadius: 8,
     flexShrink: 0,
-    border: '1px solid var(--border)',
+    border: '1px solid #2A2A2A',
   },
   videoInfo: { flex: 1, minWidth: 0 },
   authorName: {
-    fontFamily: 'var(--font-display)',
     fontWeight: 600,
     fontSize: '1rem',
     marginBottom: 2,
+    color: '#F0F0F0',
   },
   authorId: {
-    color: 'var(--blue)',
+    color: '#1B4FD8',
     fontSize: '0.82rem',
     marginBottom: 10,
   },
@@ -357,8 +434,8 @@ const styles = {
     flexWrap: 'wrap',
   },
   statPill: {
-    background: 'var(--surface2)',
-    border: '1px solid var(--border)',
+    background: '#1E1E1E',
+    border: '1px solid #2A2A2A',
     borderRadius: 8,
     padding: '4px 10px',
     display: 'flex',
@@ -367,19 +444,18 @@ const styles = {
     minWidth: 48,
   },
   statValue: {
-    fontFamily: 'var(--font-display)',
     fontWeight: 700,
     fontSize: '0.85rem',
-    color: 'var(--yellow)',
+    color: '#F5C518',
   },
   statLabel: {
     fontSize: '0.65rem',
-    color: 'var(--muted)',
+    color: '#6B6B6B',
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
   },
   copyAllBtn: {
-    background: 'var(--blue)',
+    background: '#1B4FD8',
     border: 'none',
     borderRadius: 10,
     padding: '12px 16px',
@@ -387,12 +463,11 @@ const styles = {
     fontWeight: 600,
     fontSize: '0.9rem',
     width: '100%',
-    transition: 'background 0.2s',
   },
   copyAllBtnSuccess: { background: '#16A34A' },
   block: {
-    background: 'var(--surface2)',
-    border: '1px solid var(--border)',
+    background: '#1E1E1E',
+    border: '1px solid #2A2A2A',
     borderRadius: 10,
     padding: 14,
   },
@@ -407,27 +482,27 @@ const styles = {
     fontWeight: 600,
     textTransform: 'uppercase',
     letterSpacing: '0.07em',
-    color: 'var(--muted)',
+    color: '#6B6B6B',
   },
   copyBtn: {
     background: 'transparent',
-    border: '1px solid var(--border)',
+    border: '1px solid #2A2A2A',
     borderRadius: 6,
     padding: '4px 10px',
-    color: 'var(--white)',
+    color: '#F0F0F0',
     fontSize: '0.75rem',
     fontWeight: 500,
-    transition: 'all 0.2s',
+    cursor: 'pointer',
   },
   copyBtnSuccess: {
     background: 'rgba(34,197,94,0.15)',
-    borderColor: 'var(--success)',
-    color: 'var(--success)',
+    borderColor: '#22C55E',
+    color: '#22C55E',
   },
   blockContent: {
     fontSize: '0.88rem',
     lineHeight: 1.6,
-    color: 'var(--white)',
+    color: '#F0F0F0',
     wordBreak: 'break-word',
     whiteSpace: 'pre-wrap',
   },
@@ -438,7 +513,7 @@ const styles = {
   },
   emptyIcon: { fontSize: '2.5rem', display: 'block', marginBottom: 16 },
   emptyText: {
-    color: 'var(--muted)',
+    color: '#6B6B6B',
     fontSize: '0.9rem',
     lineHeight: 1.6,
     maxWidth: 320,
@@ -448,7 +523,8 @@ const styles = {
     textAlign: 'center',
     padding: '20px 0',
     fontSize: '0.75rem',
-    color: 'var(--muted)',
-    borderTop: '1px solid var(--border)',
+    color: '#6B6B6B',
+    borderTop: '1px solid #2A2A2A',
+    marginTop: 'auto',
   },
 }
