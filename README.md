@@ -2,7 +2,9 @@
 
 > Extrae el texto de cualquier TikTok al instante — descripción, hashtags, menciones y audio desde un enlace.
 
-![TikCopy Preview](https://img.shields.io/badge/estado-MVP-yellow?style=flat-square) ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react) ![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=flat-square&logo=vite) ![Vercel](https://img.shields.io/badge/deploy-Vercel-black?style=flat-square&logo=vercel)
+![TikCopy Preview](https://img.shields.io/badge/estado-MVP-yellow?style=flat-square) ![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react) ![Vite](https://img.shields.io/badge/Vite-5-646CFF?style=flat-square&logo=vite) [![Deploy](https://img.shields.io/badge/deploy-Vercel-black?style=flat-square&logo=vercel)](https://tikcopy.vercel.app)
+
+🔗 **[tikcopy.vercel.app](https://tikcopy.vercel.app)**
 
 ---
 
