@@ -30,41 +30,6 @@ Los creadores de contenido en TikTok suelen escribir descripciones largas con pr
 | API | TikTok Scraper via RapidAPI |
 | Deploy | Vercel |
 
-## Instalación local
-
-```bash
-# 1. Clona el repositorio
-git clone https://github.com/soyjesuspenagos/tikcopy.git
-cd tikcopy/tiktok-copy-tool
-
-# 2. Instala dependencias
-npm install
-
-# 3. Configura las variables de entorno
-cp .env.example .env
-# Abre .env y agrega tu API key de RapidAPI
-# VITE_RAPIDAPI_KEY=tu_key_aqui
-
-# 4. Levanta el servidor de desarrollo
-npm run dev
-```
-
-Abre `http://localhost:5173` en tu navegador.
-
-## Variables de entorno
-
-| Variable | Descripción |
-|---|---|
-| `VITE_RAPIDAPI_KEY` | API Key de RapidAPI (TikTok Scraper7) |
-
-Regístrate gratis en [RapidAPI](https://rapidapi.com) y suscríbete a **Tiktok Scraper7** (plan Basic gratuito).
-
-## Deploy en Vercel
-
-1. Importa el repo en [vercel.com](https://vercel.com)
-2. Configura la variable de entorno `VITE_RAPIDAPI_KEY`
-3. Deploy automático en cada push a `main`
-
 ## Estructura del proyecto
 
 ```
