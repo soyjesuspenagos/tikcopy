@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 
-const RAPIDAPI_KEY = import.meta.env.VITE_RAPIDAPI_KEY
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY
 
@@ -25,10 +24,7 @@ function formatNumber(n) {
 async function getExtractions() {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/stats?id=eq.1&select=extractions`, {
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-      },
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     })
     const data = await res.json()
     return data?.[0]?.extractions ?? 0
@@ -49,7 +45,7 @@ async function incrementExtractions() {
   } catch (_) {}
 }
 
-// ── Resolver URL corta ────────────────────────────────────────────────────────
+// ── Resolver URL corta via proxy ──────────────────────────────────────────────
 async function resolveUrl(url) {
   const isShort = ['vt.tiktok.com', 'vm.tiktok.com', 'www.tiktok.com/t/'].some(d => url.includes(d))
   if (!isShort) return url
@@ -59,6 +55,12 @@ async function resolveUrl(url) {
     if (data?.status?.url?.includes('tiktok.com')) return data.status.url
   } catch (_) {}
   return url
+}
+
+// ── Llamada al proxy serverless ───────────────────────────────────────────────
+async function fetchFromProxy(videoUrl) {
+  const res = await fetch(`/api/tiktok?url=${encodeURIComponent(videoUrl)}`)
+  return res.json()
 }
 
 // ── Sub-componentes ───────────────────────────────────────────────────────────
@@ -95,10 +97,9 @@ function StatPill({ label, value }) {
 function Counter({ count }) {
   return (
     <div style={s.counterBanner}>
-      <span style={s.counterIcon}>⚡</span>
+      <span>⚡</span>
       <span style={s.counterText}>
-        <span style={s.counterNum}>{formatNumber(count)}</span>
-        {' '}extracciones realizadas
+        <span style={s.counterNum}>{formatNumber(count)}</span>{' '}extracciones realizadas
       </span>
     </div>
   )
@@ -114,9 +115,7 @@ export default function App() {
   const [copiedAll, setCopiedAll] = useState(false)
   const [count, setCount] = useState(null)
 
-  useEffect(() => {
-    getExtractions().then(setCount)
-  }, [])
+  useEffect(() => { getExtractions().then(setCount) }, [])
 
   const isValidTikTok = (u) =>
     u.includes('tiktok.com') || u.includes('vm.tiktok') || u.includes('vt.tiktok')
@@ -139,23 +138,9 @@ export default function App() {
     })
   }
 
-  const fetchVideo = async (videoUrl) => {
-    const res = await fetch(
-      `https://tiktok-scraper7.p.rapidapi.com/?url=${encodeURIComponent(videoUrl)}&hd=1`,
-      {
-        headers: {
-          'X-RapidAPI-Key': RAPIDAPI_KEY,
-          'X-RapidAPI-Host': 'tiktok-scraper7.p.rapidapi.com',
-        },
-      }
-    )
-    return res.json()
-  }
-
   const handleFetch = async () => {
     if (!url.trim()) return setError('Pega un enlace de TikTok.')
     if (!isValidTikTok(url)) return setError('El enlace no parece ser de TikTok.')
-    if (!RAPIDAPI_KEY) return setError('Falta la API Key de RapidAPI.')
 
     setError('')
     setResult(null)
@@ -166,12 +151,12 @@ export default function App() {
       const resolved = await resolveUrl(url.trim())
       setLoadingMsg('Extrayendo datos del video...')
 
-      let json = await fetchVideo(resolved)
+      let json = await fetchFromProxy(resolved)
 
-      // Reintento con URL original si falla
+      // Reintento con URL original
       if ((json.code !== 0 || !json.data) && resolved !== url.trim()) {
         setLoadingMsg('Reintentando...')
-        json = await fetchVideo(url.trim())
+        json = await fetchFromProxy(url.trim())
       }
 
       if (json.code !== 0 || !json.data) {
@@ -179,8 +164,6 @@ export default function App() {
       }
 
       processResult(json.data)
-
-      // Incrementar contador
       await incrementExtractions()
       const newCount = await getExtractions()
       setCount(newCount)
@@ -209,7 +192,6 @@ export default function App() {
 
   return (
     <div style={s.root}>
-      {/* Header */}
       <header style={s.header}>
         <div style={s.logo}>
           <span style={{ color: '#F0F0F0' }}>Tik</span>
@@ -219,10 +201,8 @@ export default function App() {
       </header>
 
       <main style={s.main}>
-        {/* Contador */}
         {count !== null && <Counter count={count} />}
 
-        {/* Input */}
         <div style={s.inputRow}>
           <input
             style={s.input}
@@ -254,7 +234,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Resultado */}
         {result && (
           <div style={s.card}>
             <div style={s.videoMeta}>
@@ -288,7 +267,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Empty state */}
         {!result && !loading && !error && (
           <div style={s.emptyState}>
             <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: 16 }}>🎵</span>
@@ -306,16 +284,13 @@ export default function App() {
   )
 }
 
-// ── Spinner ───────────────────────────────────────────────────────────────────
 function Spinner({ large }) {
   const size = large ? 28 : 18
   return (
     <span style={{
-      display: 'inline-block',
-      width: size, height: size,
-      border: `2px solid rgba(255,255,255,0.2)`,
-      borderTopColor: '#fff',
-      borderRadius: '50%',
+      display: 'inline-block', width: size, height: size,
+      border: '2px solid rgba(255,255,255,0.2)',
+      borderTopColor: '#fff', borderRadius: '50%',
       animation: 'spin 0.7s linear infinite',
     }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
@@ -323,25 +298,18 @@ function Spinner({ large }) {
   )
 }
 
-// ── Estilos ───────────────────────────────────────────────────────────────────
 const s = {
   root: { minHeight: '100dvh', display: 'flex', flexDirection: 'column', maxWidth: 600, margin: '0 auto', padding: '0 16px' },
   header: { padding: '40px 0 20px', textAlign: 'center' },
   logo: { fontFamily: "'Space Grotesk',sans-serif", fontSize: '2.2rem', fontWeight: 700, letterSpacing: '-0.03em', marginBottom: 8 },
   tagline: { color: '#6B6B6B', fontSize: '0.9rem' },
   main: { flex: 1, paddingBottom: 32 },
-  counterBanner: {
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-    background: 'linear-gradient(135deg, rgba(27,79,216,0.12), rgba(245,197,24,0.08))',
-    border: '1px solid rgba(27,79,216,0.25)', borderRadius: 12,
-    padding: '10px 16px', marginBottom: 16, textAlign: 'center',
-  },
-  counterIcon: { fontSize: '1rem' },
+  counterBanner: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, background: 'linear-gradient(135deg, rgba(27,79,216,0.12), rgba(245,197,24,0.08))', border: '1px solid rgba(27,79,216,0.25)', borderRadius: 12, padding: '10px 16px', marginBottom: 16 },
   counterText: { fontSize: '0.85rem', color: '#A0A0A0' },
   counterNum: { fontFamily: "'Space Grotesk',sans-serif", fontWeight: 700, fontSize: '1rem', color: '#F5C518' },
   inputRow: { display: 'flex', gap: 8, marginBottom: 8 },
   input: { flex: 1, background: '#141414', border: '1px solid #2A2A2A', borderRadius: 12, padding: '14px 16px', color: '#F0F0F0', fontSize: '0.95rem', outline: 'none' },
-  fetchBtn: { background: '#1B4FD8', border: 'none', borderRadius: 12, width: 52, height: 52, color: '#fff', fontSize: '1.3rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  fetchBtn: { background: '#1B4FD8', border: 'none', borderRadius: 12, width: 52, height: 52, color: '#fff', fontSize: '1.3rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' },
   fetchBtnOff: { opacity: 0.6, cursor: 'not-allowed' },
   tip: { fontSize: '0.75rem', color: '#3d6b3d', marginBottom: 16, paddingLeft: 4 },
   error: { color: '#F87171', fontSize: '0.85rem', marginBottom: 12, padding: '10px 14px', background: 'rgba(248,113,113,0.08)', borderRadius: 8, border: '1px solid rgba(248,113,113,0.2)' },
